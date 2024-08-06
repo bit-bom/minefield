@@ -11,7 +11,7 @@ import (
 	"github.com/protobom/protobom/pkg/sbom"
 )
 
-// IngestSBOM ingests a SBOM file or directory into the storage backend.
+// SBOM ingests a SBOM file or directory into the storage backend.
 func SBOM(sbomPath string, storage pkg.Storage) error {
 	info, err := os.Stat(sbomPath)
 	if err != nil {

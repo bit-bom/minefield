@@ -1,0 +1,82 @@
+syntax = "proto3";
+
+package bitbom;
+
+option go_package = "github.com/bit-bom/minefield/proto;bitbom";
+
+service CommandService {
+  rpc IngestSBOM(IngestSBOMRequest) returns (IngestSBOMResponse);
+  rpc Cache(CacheRequest) returns (CacheResponse);
+  rpc IngestOSV(IngestOSVRequest) returns (IngestOSVResponse);
+}
+
+service QueryService {
+  rpc QueryDependencies(QueryRequest) returns (QueryResponse);
+  rpc AllKeys(AllKeysRequest) returns (AllKeysResponse);
+  rpc CustomLeaderboard(CustomLeaderboardRequest) returns (CustomLeaderboardResponse);
+  rpc WeightedNACD(WeightedNACDRequest) returns (WeightedNACDResponse);
+}
+
+message IngestSBOMRequest {
+  string sbom_path = 1;
+}
+
+message IngestSBOMResponse {
+  string message = 1;
+}
+
+message CacheRequest {}
+
+message CacheResponse {
+  string message = 1;
+}
+
+message IngestOSVRequest {
+  string osv_path = 1;
+}
+
+message IngestOSVResponse {
+  string message = 1;
+}
+
+message QueryRequest {
+  string query_string = 1;
+}
+
+message QueryResponse {
+  repeated Dependency dependencies = 1;
+}
+
+message AllKeysRequest {}
+
+message AllKeysResponse {
+  repeated string keys = 1;
+}
+
+message CustomLeaderboardRequest {
+  string script = 1;
+}
+
+message CustomLeaderboardResponse {
+  repeated LeaderboardEntry entries = 1;
+}
+
+message WeightedNACDRequest {
+  string script = 1;
+}
+
+message WeightedNACDResponse {
+  repeated LeaderboardEntry entries = 1;
+}
+
+message Dependency {
+  string name = 1;
+  string type = 2;
+  string id = 3;
+}
+
+message LeaderboardEntry {
+  string name = 1;
+  string type = 2;
+  int32 query_length = 3;
+}
