@@ -139,6 +139,11 @@ func findCycles(storage Storage, direction Direction, numOfNodes int, allNodes m
 	return lowLink, nil
 }
 
+type stackElm struct {
+	id        uint32
+	todoIndex int
+}
+
 func buildCache(storage Storage, uncachedNodes []uint32, direction Direction, scc map[uint32]uint32, allNodes map[uint32]*Node) (*NativeKeyManagement, error) {
 	cache, children, parents := NewNativeKeyManagement(), NewNativeKeyManagement(), NewNativeKeyManagement()
 	alreadyCached := roaring.New()
@@ -148,48 +153,48 @@ func buildCache(storage Storage, uncachedNodes []uint32, direction Direction, sc
 		return nil, err
 	}
 
+	stack := []stackElm{}
+
 	for _, nodeID := range uncachedNodes {
-		if err := cacheDFS(storage, nodeID, direction, scc, alreadyCached, cache, children, parents, allNodes); err != nil {
+		stack = append(stack, stackElm{id: nodeID, todoIndex: 0})
+	}
+
+	for len(stack) > 0 {
+
+		todoIndex := stack[len(stack)-1].todoIndex
+		curNode := allNodes[stack[len(stack)-1].id]
+
+		if alreadyCached.Contains(curNode.ID) {
+			stack = stack[:len(stack)-1]
+			continue
+		}
+
+		todoNodes, futureNodes, err := getTodoAndFutureNodes(children, parents, curNode, direction)
+		if err != nil {
 			return nil, err
 		}
-	}
-	return cache, nil
-}
 
-func cacheDFS(storage Storage, nodeID uint32, direction Direction, scc map[uint32]uint32, alreadyCached *roaring.Bitmap, cache, children, parents *NativeKeyManagement, allNodes map[uint32]*Node) error {
-	curNode := allNodes[nodeID]
+		if todoIndex == len(todoNodes) {
+			alreadyCached.Add(curNode.ID)
+			stack = stack[:len(stack)-1]
 
-	if alreadyCached.Contains(curNode.ID) {
-		return nil
-	}
-
-	todoNodes, futureNodes, err := getTodoAndFutureNodes(children, parents, curNode, direction)
-	if err != nil {
-		return err
-	}
-
-	for _, id := range todoNodes {
-		if !(scc[curNode.ID] == scc[id]) {
-			if alreadyCached.Contains(id) {
-				if err := addToCache(cache, nodeID, id); err != nil {
-					return err
+			for _, nextNode := range futureNodes {
+				stack = append(stack, stackElm{id: nextNode, todoIndex: 0})
+			}
+		} else {
+			if scc[curNode.ID] != scc[todoNodes[todoIndex]] {
+				stack = append(stack[:len(stack)-1], stackElm{id: curNode.ID, todoIndex: todoIndex + 1})
+				if alreadyCached.Contains(todoNodes[todoIndex]) {
+					if err := addToCache(cache, curNode.ID, todoNodes[todoIndex]); err != nil {
+						return nil, err
+					}
+				} else {
+					stack = append(stack, stackElm{id: todoNodes[todoIndex], todoIndex: 0})
 				}
-			} else if err := cacheDFS(storage, id, direction, scc, alreadyCached, cache, children, parents, allNodes); err != nil {
-				return err
 			}
 		}
 	}
-
-	alreadyCached.Add(nodeID)
-
-	// We have to iterate through the future nodes
-	for _, id := range futureNodes {
-		if err := cacheDFS(storage, id, direction, scc, alreadyCached, cache, children, parents, allNodes); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return cache, nil
 }
 
 func addCyclesToBindMap(storage Storage, scc map[uint32]uint32, cache, children, parents *NativeKeyManagement, allNodes map[uint32]*Node) error {
