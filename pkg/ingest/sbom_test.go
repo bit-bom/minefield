@@ -20,22 +20,22 @@ func TestIngestSBOM(t *testing.T) {
 			want: map[uint32]*pkg.Node{
 				1: {
 					ID:   1,
-					Type: "PACKAGE",
+					Type: "application",
 					Name: "pkg:generic/dep1@1.0.0",
 				},
 				2: {
 					ID:   2,
-					Type: "PACKAGE",
+					Type: "library",
 					Name: "pkg:generic/dep2@1.0.0",
 				},
 				3: {
 					ID:   3,
-					Type: "PACKAGE",
+					Type: "library",
 					Name: "pkg:generic/lib-A@1.0.0",
 				},
 				4: {
 					ID:   4,
-					Type: "PACKAGE",
+					Type: "library",
 					Name: "pkg:generic/lib-B@1.0.0",
 				},
 			},

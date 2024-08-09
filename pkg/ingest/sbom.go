@@ -48,15 +48,15 @@ func processSBOMFile(filePath string, storage pkg.Storage) error {
 	}
 
 	file, err := os.Open(filePath)
-	defer file.Close()
 	if err != nil {
 		return err
 	}
+	defer file.Close()
 
 	bom := new(cdx.BOM)
 	decoder := cdx.NewBOMDecoder(file, cdx.BOMFileFormatJSON)
 	if err = decoder.Decode(bom); err != nil {
-		panic(err)
+		return fmt.Errorf("failed to decode BOM: %w", err)
 	}
 
 	mainBomNode := bom.Metadata.Component
