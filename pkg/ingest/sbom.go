@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
+	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/bit-bom/minefield/pkg"
-	"github.com/protobom/protobom/pkg/reader"
-	"github.com/protobom/protobom/pkg/sbom"
 )
 
 // IngestSBOM ingests a SBOM file or directory into the storage backend.
@@ -46,21 +46,54 @@ func processSBOMFile(filePath string, storage pkg.Storage) error {
 	if err != nil {
 		return fmt.Errorf("failed to stat file %s: %w", filePath, err)
 	}
-	sbomReader := reader.New()
 
-	document, err := sbomReader.ParseFile(filePath)
+	file, err := os.Open(filePath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	bom := new(cdx.BOM)
+	decoder := cdx.NewBOMDecoder(file, cdx.BOMFileFormatJSON)
+	if err = decoder.Decode(bom); err != nil {
+		return fmt.Errorf("failed to decode BOM: %w", err)
+	}
+
+	mainBomNode := bom.Metadata.Component
+
+	mainPurl := mainBomNode.PackageURL
+
+	if mainPurl == "" {
+		mainPurl = fmt.Sprintf("pkg:generic/%s@%s", mainBomNode.Name, mainBomNode.Version)
+	}
+
+	mainGraphNode, err := pkg.AddNode(storage, string(mainBomNode.Type), bom, mainPurl)
+
 	if err != nil {
 		return fmt.Errorf("failed to parse SBOM file %s: %w", filePath, err)
 	}
-	nameToNodeID := map[string]uint32{}
 
-	for _, node := range document.GetNodeList().GetNodes() {
-		purl := string(node.Purl())
+	for _, node := range *bom.Components {
+
+		directDep := false
+		if node.Properties != nil {
+			for _, property := range *node.Properties {
+				if strings.Contains(property.Name, "indirect") && property.Value == "false" {
+					directDep = true
+				}
+			}
+		}
+
+		if !directDep {
+			continue
+		}
+		purl := node.PackageURL
+
 		if purl == "" {
 			purl = fmt.Sprintf("pkg:generic/%s@%s", node.Name, node.Version)
 		}
 
-		graphNode, err := pkg.AddNode(storage, node.Type.String(), any(node), purl)
+		graphNode, err := pkg.AddNode(storage, string(node.Type), any(node), purl)
 		if err != nil {
 			if errors.Is(err, pkg.ErrNodeAlreadyExists) {
 				// TODO: Add a logger
@@ -69,50 +102,12 @@ func processSBOMFile(filePath string, storage pkg.Storage) error {
 			}
 			return fmt.Errorf("failed to add node: %w", err)
 		}
-		nameToNodeID[purl] = graphNode.ID
+
+		if err := mainGraphNode.SetDependency(storage, graphNode); err != nil {
+			return fmt.Errorf("failed to add dependencies: %w", err)
+		}
+
 	}
 
-	err = addDependency(document, storage, nameToNodeID)
-	if err != nil {
-		return fmt.Errorf("failed to add dependencies: %w", err)
-	}
-
-	return nil
-}
-
-// addDependency iterates over all the edges protobom sbom document and creates a dependency edge between each node in an edge
-func addDependency(document *sbom.Document, storage pkg.Storage, nameToNodeID map[string]uint32) error {
-	for _, edge := range document.GetNodeList().GetEdges() {
-		fromProtoNode := document.GetNodeList().GetNodeByID(edge.From)
-		fromPurl := string(fromProtoNode.Purl())
-		if fromPurl == "" {
-			fromPurl = fmt.Sprintf("pkg:generic/%s@%s", fromProtoNode.Name, fromProtoNode.Version)
-		}
-		fromNode, err := storage.GetNode(nameToNodeID[fromPurl])
-		if err != nil {
-			return fmt.Errorf("failed to get node: %w", err)
-		}
-		for _, to := range edge.To {
-			toProtoNode := document.GetNodeList().GetNodeByID(to)
-
-			toPurl := string(toProtoNode.Purl())
-			if toPurl == "" {
-				toPurl = fmt.Sprintf("pkg:generic/%s@%s", toProtoNode.Name, toProtoNode.Version)
-			}
-
-			toNode, err := storage.GetNode(nameToNodeID[toPurl])
-			if err != nil {
-				return fmt.Errorf("failed to get node: %w", err)
-			}
-
-			err = fromNode.SetDependency(storage, toNode)
-			if errors.Is(err, pkg.ErrSelfDependency) {
-				continue
-			}
-			if err != nil {
-				return fmt.Errorf("failed to set dependency: %w", err)
-			}
-		}
-	}
 	return nil
 }
